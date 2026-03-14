@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from core.config import settings
 from routers.todo_router import router as todo_router
+from routers.auth_router import router as auth_router
 
 app = FastAPI(title=settings.app_name, debug=settings.debug)
 
@@ -21,4 +22,5 @@ def read_root():
 def health_check():
     return {"status": "ok"}
 
+app.include_router(auth_router, prefix="/api/v1")
 app.include_router(todo_router, prefix="/api/v1")
