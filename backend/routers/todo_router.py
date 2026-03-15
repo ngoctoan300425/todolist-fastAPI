@@ -34,6 +34,10 @@ def get_overdue_todos(db: Session = Depends(get_db), current_user: User = Depend
 def get_today_todos(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     return todo_service.get_today_todos(db, current_user.id)
 
+@router.get("/deleted", response_model=List[ToDoResponse])
+def get_deleted_todos(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return todo_service.get_deleted_todos(db, current_user.id)
+
 @router.get("/{todo_id}", response_model=ToDoResponse)
 def get_todo(todo_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     return todo_service.get_todo_by_id(db, todo_id, current_user.id)
@@ -53,3 +57,7 @@ def complete_todo(todo_id: int, db: Session = Depends(get_db), current_user: Use
 @router.delete("/{todo_id}")
 def delete_todo(todo_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     return todo_service.delete_todo(db, todo_id, current_user.id)
+
+@router.post("/{todo_id}/restore", response_model=ToDoResponse)
+def restore_todo(todo_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return todo_service.restore_todo(db, todo_id, current_user.id)

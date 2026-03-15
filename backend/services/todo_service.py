@@ -24,6 +24,9 @@ class ToDoService:
     def get_today_todos(self, db: Session, owner_id: int) -> List[ToDoResponse]:
         return todo_repo.get_today(db, owner_id)
 
+    def get_deleted_todos(self, db: Session, owner_id: int) -> List[ToDoResponse]:
+        return todo_repo.get_deleted(db, owner_id)
+
     def get_todo_by_id(self, db: Session, todo_id: int, owner_id: int) -> ToDoResponse:
         todo = todo_repo.get_by_id(db, todo_id, owner_id)
         if not todo:
@@ -78,3 +81,9 @@ class ToDoService:
         if not deleted:
             raise HTTPException(status_code=404, detail="ToDo not found")
         return {"message": "ToDo deleted successfully"}
+
+    def restore_todo(self, db: Session, todo_id: int, owner_id: int) -> ToDoResponse:
+        restored = todo_repo.restore(db, todo_id, owner_id)
+        if not restored:
+            raise HTTPException(status_code=404, detail="ToDo not found in trash")
+        return restored

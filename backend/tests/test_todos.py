@@ -55,3 +55,28 @@ def test_update_todo_success(client, auth_headers):
     assert response.status_code == status.HTTP_200_OK
     assert response.json()["title"] == "Updated Title"
     assert response.json()["is_done"] is True
+
+def test_soft_delete_and_restore(client, auth_headers):
+    # 1. Create todo
+    create_res = client.post("/api/v1/todos", json={"title": "Delete Me"}, headers=auth_headers)
+    todo_id = create_res.json()["id"]
+    
+    # 2. Soft delete
+    del_res = client.delete(f"/api/v1/todos/{todo_id}", headers=auth_headers)
+    assert del_res.status_code == status.HTTP_200_OK
+    
+    # 3. Check it is NOT in normal list
+    list_res = client.get("/api/v1/todos", headers=auth_headers)
+    assert all(item["id"] != todo_id for item in list_res.json()["items"])
+    
+    # 4. Check it IS in deleted list
+    deleted_res = client.get("/api/v1/todos/deleted", headers=auth_headers)
+    assert any(item["id"] == todo_id for item in deleted_res.json())
+    
+    # 5. Restore it
+    restore_res = client.post(f"/api/v1/todos/{todo_id}/restore", headers=auth_headers)
+    assert restore_res.status_code == status.HTTP_200_OK
+    
+    # 6. Check it IS in normal list again
+    list_res_2 = client.get("/api/v1/todos", headers=auth_headers)
+    assert any(item["id"] == todo_id for item in list_res_2.json()["items"])

@@ -5,7 +5,7 @@ from schemas.todo_schema import ToDoCreate, ToDoUpdate
 
 class ToDoRepository:
     def get_all(self, db: Session, owner_id: int, is_done: Optional[bool] = None, q: Optional[str] = None, sort: Optional[str] = None, limit: int = 10, offset: int = 0) -> tuple[List[Todo], int]:
-        query = db.query(Todo).filter(Todo.owner_id == owner_id)
+        query = db.query(Todo).filter(Todo.owner_id == owner_id, Todo.deleted_at == None)
 
         if is_done is not None:
             query = query.filter(Todo.is_done == is_done)
@@ -28,7 +28,8 @@ class ToDoRepository:
         return db.query(Todo).filter(
             Todo.owner_id == owner_id,
             Todo.is_done == False,
-            Todo.due_date < datetime.now()
+            Todo.due_date < datetime.now(),
+            Todo.deleted_at == None
         ).all()
 
     def get_today(self, db: Session, owner_id: int) -> List[Todo]:
@@ -38,11 +39,15 @@ class ToDoRepository:
         return db.query(Todo).filter(
             Todo.owner_id == owner_id,
             Todo.due_date >= today_start,
-            Todo.due_date <= today_end
+            Todo.due_date <= today_end,
+            Todo.deleted_at == None
         ).all()
         
     def get_by_id(self, db: Session, todo_id: int, owner_id: int) -> Optional[Todo]:
-        return db.query(Todo).filter(Todo.id == todo_id, Todo.owner_id == owner_id).first()
+        return db.query(Todo).filter(Todo.id == todo_id, Todo.owner_id == owner_id, Todo.deleted_at == None).first()
+
+    def get_deleted(self, db: Session, owner_id: int) -> List[Todo]:
+        return db.query(Todo).filter(Todo.owner_id == owner_id, Todo.deleted_at != None).all()
 
     def create(self, db: Session, todo_in: ToDoCreate, owner_id: int, tags: List = None) -> Todo:
         db_todo = Todo(
@@ -83,6 +88,16 @@ class ToDoRepository:
         db_todo = self.get_by_id(db, todo_id, owner_id)
         if not db_todo:
             return False
-        db.delete(db_todo)
+        from datetime import datetime
+        db_todo.deleted_at = datetime.now()
         db.commit()
         return True
+
+    def restore(self, db: Session, todo_id: int, owner_id: int) -> Optional[Todo]:
+        db_todo = db.query(Todo).filter(Todo.id == todo_id, Todo.owner_id == owner_id, Todo.deleted_at != None).first()
+        if not db_todo:
+            return None
+        db_todo.deleted_at = None
+        db.commit()
+        db.refresh(db_todo)
+        return db_todo

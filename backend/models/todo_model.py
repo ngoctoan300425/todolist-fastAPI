@@ -15,6 +15,7 @@ class Todo(Base):
     owner_id = Column(Integer, ForeignKey("users.id"))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
 
     owner = relationship("User", back_populates="todos")
     tags = relationship("Tag", secondary=todo_tags, back_populates="todos")

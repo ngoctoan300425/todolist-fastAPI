@@ -21,7 +21,7 @@ function App() {
   const [editingTodo, setEditingTodo] = useState(null)
 
   const [search, setSearch] = useState('')
-  const [filter, setFilter] = useState('all') // all, active, done, today, overdue
+  const [filter, setFilter] = useState('all') // all, active, done, today, overdue, trash
   const [sort, setSort] = useState('-created_at')
 
   const [limit] = useState(5)
@@ -86,6 +86,8 @@ function App() {
         url = `${API_URL}/today`
       } else if (filter === 'overdue') {
         url = `${API_URL}/overdue`
+      } else if (filter === 'trash') {
+        url = `${API_URL}/deleted`
       } else {
         params.append('limit', limit)
         params.append('offset', offset)
@@ -103,7 +105,7 @@ function App() {
       if (res.status === 401) return handleLogout()
 
       const data = await res.json()
-      if (filter === 'today' || filter === 'overdue') {
+      if (['today', 'overdue', 'trash'].includes(filter)) {
         setTodos(data || [])
         setTotal(data?.length || 0)
       } else {
@@ -195,6 +197,19 @@ function App() {
     }
   }
 
+  const handleRestore = async (id) => {
+    try {
+      const res = await fetch(`${API_URL}/${id}/restore`, {
+        method: 'POST',
+        headers: getHeaders()
+      })
+      if (res.status === 401) return handleLogout()
+      if (res.ok) fetchTodos()
+    } catch (error) {
+      console.error(error)
+    }
+  }
+
   const formatDate = (dateStr) => {
     if (!dateStr) return null
     return new Date(dateStr).toLocaleString('vi-VN', {
@@ -237,7 +252,7 @@ function App() {
   return (
     <div className="container">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
-        <h1>Task Master <span className="badge" style={{ background: '#e0e7ff', color: '#4338ca' }}>Cấp 6</span></h1>
+        <h1>Task Master <span className="badge" style={{ background: '#e0e7ff', color: '#4338ca' }}>Cấp 8</span></h1>
         <button onClick={handleLogout} className="secondary">Logout</button>
       </div>
 
@@ -309,6 +324,7 @@ function App() {
           <option value="done">Done</option>
           <option value="today">Today</option>
           <option value="overdue">Overdue</option>
+          <option value="trash">Trash</option>
         </select>
         <select value={sort} onChange={e => setSort(e.target.value)}>
           <option value="-created_at">Newest First</option>
@@ -323,12 +339,14 @@ function App() {
         {todos.map(todo => (
           <li key={todo.id} className={`todo-item ${todo.is_done ? 'done' : ''}`}>
             <div className="todo-header">
-              <input
-                type="checkbox"
-                checked={todo.is_done}
-                onChange={() => handleToggleDone(todo)}
-                style={{ width: '20px', height: '20px', cursor: 'pointer', marginTop: '4px' }}
-              />
+              {filter !== 'trash' && (
+                <input
+                  type="checkbox"
+                  checked={todo.is_done}
+                  onChange={() => handleToggleDone(todo)}
+                  style={{ width: '20px', height: '20px', cursor: 'pointer', marginTop: '4px' }}
+                />
+              )}
               <div className="todo-content">
                 <span className="todo-title">{todo.title}</span>
                 {todo.description && <p className="todo-desc">{todo.description}</p>}
@@ -347,14 +365,20 @@ function App() {
             </div>
 
             <div className="todo-actions">
-              <button className="secondary" style={{ padding: '0.4rem 0.8rem' }} onClick={() => handleEditClick(todo)}>Edit</button>
-              <button className="danger" onClick={() => handleDelete(todo.id)}>Delete</button>
+              {filter === 'trash' ? (
+                <button className="primary" style={{ padding: '0.4rem 0.8rem' }} onClick={() => handleRestore(todo.id)}>Restore</button>
+              ) : (
+                <>
+                  <button className="secondary" style={{ padding: '0.4rem 0.8rem' }} onClick={() => handleEditClick(todo)}>Edit</button>
+                  <button className="danger" onClick={() => handleDelete(todo.id)}>Delete</button>
+                </>
+              )}
             </div>
           </li>
         ))}
       </ul>
 
-      {filter !== 'today' && filter !== 'overdue' && (
+      {!['today', 'overdue', 'trash'].includes(filter) && (
         <div className="pagination">
           <button className="secondary" disabled={offset === 0} onClick={() => setOffset(prev => Math.max(0, prev - limit))}>Prev</button>
           <span style={{ fontWeight: '600' }}>{Math.floor(offset / limit) + 1} / {Math.ceil(total / limit) || 1}</span>
