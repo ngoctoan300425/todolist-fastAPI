@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Query, status, Depends
-from typing import Optional
+from typing import Optional, List
 from sqlalchemy.orm import Session
 from schemas.todo_schema import ToDoCreate, ToDoUpdate, ToDoResponse, PaginatedToDos
 from services.todo_service import ToDoService
@@ -25,6 +25,14 @@ def get_todos(
     current_user: User = Depends(get_current_user)
 ):
     return todo_service.get_todos(db, current_user.id, is_done, q, sort, limit, offset)
+
+@router.get("/overdue", response_model=List[ToDoResponse])
+def get_overdue_todos(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return todo_service.get_overdue_todos(db, current_user.id)
+
+@router.get("/today", response_model=List[ToDoResponse])
+def get_today_todos(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return todo_service.get_today_todos(db, current_user.id)
 
 @router.get("/{todo_id}", response_model=ToDoResponse)
 def get_todo(todo_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):

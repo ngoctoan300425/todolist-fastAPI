@@ -4,7 +4,6 @@ import './App.css'
 const API_URL = '/api/v1/todos'
 const AUTH_URL = '/api/v1/auth'
 
-
 function App() {
   const [token, setToken] = useState(localStorage.getItem('token') || '')
   const [isLoginView, setIsLoginView] = useState(true)
@@ -13,9 +12,16 @@ function App() {
   const [authError, setAuthError] = useState('')
 
   const [todos, setTodos] = useState([])
-  const [inputValue, setInputValue] = useState('')
+  const [formData, setFormData] = useState({
+    title: '',
+    description: '',
+    due_date: '',
+    tags: ''
+  })
+  const [editingTodo, setEditingTodo] = useState(null)
+
   const [search, setSearch] = useState('')
-  const [filter, setFilter] = useState('all')
+  const [filter, setFilter] = useState('all') // all, active, done, today, overdue
   const [sort, setSort] = useState('-created_at')
 
   const [limit] = useState(5)
@@ -30,12 +36,10 @@ function App() {
     setOffset(0)
   }, [search, filter, sort])
 
-  const getHeaders = () => {
-    return {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`
-    }
-  }
+  const getHeaders = () => ({
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${token}`
+  })
 
   const handleAuth = async (e) => {
     e.preventDefault()
@@ -56,13 +60,13 @@ function App() {
           setPassword('')
         } else {
           setIsLoginView(true)
-          setAuthError('Registered! Please log in.')
+          setAuthError('Registered successfully! Please login.')
         }
       } else {
         setAuthError(data.detail || 'Authentication failed')
       }
     } catch (err) {
-      setAuthError('Network error')
+      setAuthError('Connection error')
     }
   }
 
@@ -75,58 +79,89 @@ function App() {
 
   const fetchTodos = async () => {
     try {
+      let url = API_URL
       const params = new URLSearchParams()
-      params.append('limit', limit)
-      params.append('offset', offset)
-      if (search) params.append('q', search)
-      if (filter === 'active') params.append('is_done', 'false')
-      if (filter === 'done') params.append('is_done', 'true')
-      params.append('sort', sort)
 
-      const res = await fetch(`${API_URL}?${params.toString()}`, {
+      if (filter === 'today') {
+        url = `${API_URL}/today`
+      } else if (filter === 'overdue') {
+        url = `${API_URL}/overdue`
+      } else {
+        params.append('limit', limit)
+        params.append('offset', offset)
+        if (search) params.append('q', search)
+        if (filter === 'active') params.append('is_done', 'false')
+        if (filter === 'done') params.append('is_done', 'true')
+        params.append('sort', sort)
+      }
+
+      const queryString = params.toString()
+      const res = await fetch(`${url}${queryString ? '?' + queryString : ''}`, {
         headers: getHeaders()
       })
-      if (res.status === 401) {
-        handleLogout()
-        return
-      }
+
+      if (res.status === 401) return handleLogout()
+
       const data = await res.json()
-      setTodos(data.items || [])
-      setTotal(data.total || 0)
+      if (filter === 'today' || filter === 'overdue') {
+        setTodos(data || [])
+        setTotal(data?.length || 0)
+      } else {
+        setTodos(data.items || [])
+        setTotal(data.total || 0)
+      }
     } catch (error) {
       console.error(error)
     }
   }
 
-  const handleAdd = async () => {
-    if (!inputValue.trim()) return
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    if (formData.title.length < 3) return alert('Title must be at least 3 characters')
+
+    const body = {
+      title: formData.title,
+      description: formData.description || null,
+      due_date: formData.due_date ? new Date(formData.due_date).toISOString() : null,
+      tags: formData.tags.split(',').map(tag => tag.trim()).filter(tag => tag !== "")
+    }
+
     try {
-      const res = await fetch(API_URL, {
-        method: 'POST',
+      const method = editingTodo ? 'PUT' : 'POST'
+      const url = editingTodo ? `${API_URL}/${editingTodo.id}` : API_URL
+
+      const res = await fetch(url, {
+        method,
         headers: getHeaders(),
-        body: JSON.stringify({ title: inputValue.trim() })
+        body: JSON.stringify(body)
       })
+
       if (res.status === 401) return handleLogout()
+
       if (res.ok) {
-        setInputValue('')
-        setOffset(0)
-        setSort('-created_at')
+        setFormData({ title: '', description: '', due_date: '', tags: '' })
+        setEditingTodo(null)
         fetchTodos()
       } else {
         const err = await res.json()
-        alert('Failed: ' + JSON.stringify(err.detail))
+        alert('Error: ' + JSON.stringify(err.detail))
       }
     } catch (error) {
       console.error(error)
     }
   }
 
-  const handleToggle = async (todo) => {
+  const handleToggleDone = async (todo) => {
     try {
-      const res = await fetch(`${API_URL}/${todo.id}`, {
-        method: 'PATCH',
+      // For level 6, let's use the specific /complete endpoint if we are checking it
+      const url = !todo.is_done ? `${API_URL}/${todo.id}/complete` : `${API_URL}/${todo.id}`
+      const method = !todo.is_done ? 'POST' : 'PATCH'
+      const body = !todo.is_done ? null : JSON.stringify({ is_done: false })
+
+      const res = await fetch(url, {
+        method,
         headers: getHeaders(),
-        body: JSON.stringify({ is_done: !todo.is_done })
+        body
       })
       if (res.status === 401) return handleLogout()
       if (res.ok) fetchTodos()
@@ -135,56 +170,65 @@ function App() {
     }
   }
 
+  const handleEditClick = (todo) => {
+    setEditingTodo(todo)
+    setFormData({
+      title: todo.title,
+      description: todo.description || '',
+      due_date: todo.due_date ? new Date(todo.due_date).toISOString().slice(0, 16) : '',
+      tags: todo.tags?.map(t => t.name).join(', ') || ''
+    })
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
   const handleDelete = async (id) => {
+    if (!confirm('Are you sure?')) return
     try {
       const res = await fetch(`${API_URL}/${id}`, {
         method: 'DELETE',
         headers: getHeaders()
       })
       if (res.status === 401) return handleLogout()
-      if (res.ok) {
-        if (offset > 0 && offset + 1 === total) {
-          setOffset(prev => prev - limit)
-        } else {
-          fetchTodos()
-        }
-      }
+      if (res.ok) fetchTodos()
     } catch (error) {
       console.error(error)
     }
   }
 
-  const currentPage = Math.floor(offset / limit) + 1
-  const totalPages = Math.ceil(total / limit) || 1
+  const formatDate = (dateStr) => {
+    if (!dateStr) return null
+    return new Date(dateStr).toLocaleString('vi-VN', {
+      day: '2-digit', month: '2-digit', year: 'numeric',
+      hour: '2-digit', minute: '2-digit'
+    })
+  }
+
+  const isOverdue = (dateStr) => {
+    if (!dateStr) return false
+    return new Date(dateStr) < new Date()
+  }
 
   if (!token) {
     return (
-      <div className="container" style={{ maxWidth: '400px', margin: '40px auto', padding: '20px' }}>
+      <div className="container auth-card">
         <h1>{isLoginView ? 'Login' : 'Register'}</h1>
-        {authError && <p style={{ color: 'red' }}>{authError}</p>}
-        <form onSubmit={handleAuth} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          <input
-            type="email"
-            placeholder="Email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            style={{ padding: '8px' }}
-          />
-          <input
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            style={{ padding: '8px' }}
-          />
-          <button type="submit" style={{ padding: '10px' }}>
+        {authError && <p style={{ color: 'red', textAlign: 'center' }}>{authError}</p>}
+        <form onSubmit={handleAuth} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          <div className="form-group">
+            <label>Email</label>
+            <input type="email" value={email} onChange={e => setEmail(e.target.value)} required />
+          </div>
+          <div className="form-group">
+            <label>Password</label>
+            <input type="password" value={password} onChange={e => setPassword(e.target.value)} required />
+          </div>
+          <button type="submit" className="primary">
             {isLoginView ? 'Login' : 'Register'}
           </button>
         </form>
-        <p style={{ marginTop: '10px', cursor: 'pointer', color: 'blue' }} onClick={() => setIsLoginView(!isLoginView)}>
-          {isLoginView ? "Don't have an account? Register" : 'Already have an account? Login'}
+        <p style={{ marginTop: '1.5rem', textAlign: 'center', cursor: 'pointer', color: 'var(--primary)', fontWeight: '600' }}
+          onClick={() => setIsLoginView(!isLoginView)}>
+          {isLoginView ? "Need an account? Register" : "Have an account? Login"}
         </p>
       </div>
     )
@@ -192,64 +236,131 @@ function App() {
 
   return (
     <div className="container">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h1>My ToDo List</h1>
-        <button onClick={handleLogout}>Logout</button>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+        <h1>Task Master <span className="badge" style={{ background: '#e0e7ff', color: '#4338ca' }}>Cấp 6</span></h1>
+        <button onClick={handleLogout} className="secondary">Logout</button>
+      </div>
+
+      <div className="input-card">
+        <h3>{editingTodo ? 'Edit Task' : 'Add New Task'}</h3>
+        <form onSubmit={handleSubmit}>
+          <div className="form-group">
+            <label>Title *</label>
+            <input
+              type="text"
+              placeholder="What needs to be done?"
+              value={formData.title}
+              onChange={e => setFormData({ ...formData, title: e.target.value })}
+              required
+            />
+          </div>
+          <div className="form-group">
+            <label>Description</label>
+            <textarea
+              rows="2"
+              placeholder="Add more details..."
+              value={formData.description}
+              onChange={e => setFormData({ ...formData, description: e.target.value })}
+            />
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+            <div className="form-group">
+              <label>Due Date</label>
+              <input
+                type="datetime-local"
+                value={formData.due_date}
+                onChange={e => setFormData({ ...formData, due_date: e.target.value })}
+              />
+            </div>
+            <div className="form-group">
+              <label>Tags (comma separated)</label>
+              <input
+                type="text"
+                placeholder="work, personal, urgent"
+                value={formData.tags}
+                onChange={e => setFormData({ ...formData, tags: e.target.value })}
+              />
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
+            <button type="submit" className="primary" style={{ flex: 1 }}>
+              {editingTodo ? 'Save Changes' : 'Add Task'}
+            </button>
+            {editingTodo && (
+              <button type="button" className="secondary" onClick={() => {
+                setEditingTodo(null)
+                setFormData({ title: '', description: '', due_date: '', tags: '' })
+              }}>Cancel</button>
+            )}
+          </div>
+        </form>
       </div>
 
       <div className="controls-container">
         <input
           type="text"
-          placeholder="Search todos..."
+          placeholder="Search by title..."
           value={search}
           onChange={e => setSearch(e.target.value)}
         />
         <select value={filter} onChange={e => setFilter(e.target.value)}>
-          <option value="all">All</option>
+          <option value="all">All Status</option>
           <option value="active">Active</option>
           <option value="done">Done</option>
+          <option value="today">Today</option>
+          <option value="overdue">Overdue</option>
         </select>
         <select value={sort} onChange={e => setSort(e.target.value)}>
           <option value="-created_at">Newest First</option>
           <option value="created_at">Oldest First</option>
+          <option value="due_date">Due Date Asc</option>
+          <option value="-due_date">Due Date Desc</option>
         </select>
       </div>
 
-      <div className="input-container">
-        <input
-          type="text"
-          placeholder="What needs to be done? (min 3 chars)"
-          value={inputValue}
-          onChange={e => setInputValue(e.target.value)}
-          onKeyPress={e => e.key === 'Enter' && handleAdd()}
-        />
-        <button id="add-btn" onClick={handleAdd}>Add</button>
-      </div>
-
-      <ul id="todo-list">
+      <ul className="todo-list">
+        {todos.length === 0 && <p style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No tasks found.</p>}
         {todos.map(todo => (
-          <li key={todo.id} className={todo.is_done ? 'done' : ''}>
-            <div style={{ display: 'flex', alignItems: 'center', flex: 1 }}>
+          <li key={todo.id} className={`todo-item ${todo.is_done ? 'done' : ''}`}>
+            <div className="todo-header">
               <input
                 type="checkbox"
                 checked={todo.is_done}
-                onChange={() => handleToggle(todo)}
-                style={{ marginRight: '10px', cursor: 'pointer' }}
+                onChange={() => handleToggleDone(todo)}
+                style={{ width: '20px', height: '20px', cursor: 'pointer', marginTop: '4px' }}
               />
-              <span className="todo-text" onClick={() => handleToggle(todo)}>
-                {todo.title}
-              </span>
+              <div className="todo-content">
+                <span className="todo-title">{todo.title}</span>
+                {todo.description && <p className="todo-desc">{todo.description}</p>}
+
+                <div className="todo-meta">
+                  {todo.due_date && (
+                    <span className={`due-date ${isOverdue(todo.due_date) && !todo.is_done ? 'overdue' : ''}`}>
+                      📅 {formatDate(todo.due_date)}
+                    </span>
+                  )}
+                  {todo.tags?.map(tag => (
+                    <span key={tag.id} className="tag">#{tag.name}</span>
+                  ))}
+                </div>
+              </div>
             </div>
-            <button className="delete-btn" onClick={() => handleDelete(todo.id)}>Delete</button>
+
+            <div className="todo-actions">
+              <button className="secondary" style={{ padding: '0.4rem 0.8rem' }} onClick={() => handleEditClick(todo)}>Edit</button>
+              <button className="danger" onClick={() => handleDelete(todo.id)}>Delete</button>
+            </div>
           </li>
         ))}
       </ul>
 
-      <div className="pagination-container">
-        <button disabled={offset === 0} onClick={() => setOffset(prev => prev - limit)}>Prev</button>
-        <span>Page {currentPage} of {totalPages}</span>
-        <button disabled={offset + limit >= total} onClick={() => setOffset(prev => prev + limit)}>Next</button>
-      </div>
+      {filter !== 'today' && filter !== 'overdue' && (
+        <div className="pagination">
+          <button className="secondary" disabled={offset === 0} onClick={() => setOffset(prev => Math.max(0, prev - limit))}>Prev</button>
+          <span style={{ fontWeight: '600' }}>{Math.floor(offset / limit) + 1} / {Math.ceil(total / limit) || 1}</span>
+          <button className="secondary" disabled={offset + limit >= total} onClick={() => setOffset(prev => prev + limit)}>Next</button>
+        </div>
+      )}
     </div>
   )
 }

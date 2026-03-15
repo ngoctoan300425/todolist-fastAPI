@@ -22,30 +22,58 @@ class ToDoRepository:
         items = query.offset(offset).limit(limit).all()
         
         return items, total
+
+    def get_overdue(self, db: Session, owner_id: int) -> List[Todo]:
+        from datetime import datetime
+        return db.query(Todo).filter(
+            Todo.owner_id == owner_id,
+            Todo.is_done == False,
+            Todo.due_date < datetime.now()
+        ).all()
+
+    def get_today(self, db: Session, owner_id: int) -> List[Todo]:
+        from datetime import datetime, time
+        today_start = datetime.combine(datetime.now().date(), time.min)
+        today_end = datetime.combine(datetime.now().date(), time.max)
+        return db.query(Todo).filter(
+            Todo.owner_id == owner_id,
+            Todo.due_date >= today_start,
+            Todo.due_date <= today_end
+        ).all()
         
     def get_by_id(self, db: Session, todo_id: int, owner_id: int) -> Optional[Todo]:
         return db.query(Todo).filter(Todo.id == todo_id, Todo.owner_id == owner_id).first()
 
-    def create(self, db: Session, todo_in: ToDoCreate, owner_id: int) -> Todo:
+    def create(self, db: Session, todo_in: ToDoCreate, owner_id: int, tags: List = None) -> Todo:
         db_todo = Todo(
             title=todo_in.title,
             description=todo_in.description,
             is_done=todo_in.is_done,
+            due_date=todo_in.due_date,
             owner_id=owner_id
         )
+        if tags:
+            db_todo.tags = tags
         db.add(db_todo)
         db.commit()
         db.refresh(db_todo)
         return db_todo
 
-    def update(self, db: Session, todo_id: int, todo_in: ToDoUpdate, owner_id: int) -> Optional[Todo]:
+    def update(self, db: Session, todo_id: int, todo_in: ToDoUpdate, owner_id: int, tags: List = None) -> Optional[Todo]:
         db_todo = self.get_by_id(db, todo_id, owner_id)
         if not db_todo:
             return None
             
         update_data = todo_in.model_dump(exclude_unset=True)
+        # tags are handled separately
+        if "tags" in update_data:
+            del update_data["tags"]
+
         for key, value in update_data.items():
             setattr(db_todo, key, value)
+        
+        if tags is not None:
+            db_todo.tags = tags
             
         db.commit()
         db.refresh(db_todo)
